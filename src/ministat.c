@@ -10,11 +10,11 @@
 #include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
-#include <err.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #define NSTUDENT 100
 #define NCONF 6
@@ -499,8 +499,10 @@ ReadSet(FILE *f, const char *n, int column, const char *delim)
             continue;
 
         d = strtod(t, &p);
-        if (p != NULL && *p != '\0')
-            errx(2, "Invalid data on line %d in %s", line, n);
+        if (p != NULL && *p != '\0') {
+            fprintf(stderr, "Invalid data on line %d in %s", line, n);
+            exit(2);
+        }
         if (*buf != '\0')
             AddPoint(s, d);
     }
@@ -633,8 +635,11 @@ main(int argc, char **argv)
                 setfiles[0] = stdin;
             else
                 setfiles[i] = fopen(argv[i], "r");
-            if (setfiles[i] == NULL)
-                err(2, "Cannot open %s", argv[i]);
+            if (setfiles[i] == NULL) {
+                const char *errno_msg = strerror(errno);
+                fprintf(stderr, "Cannot open %s: %s", argv[i], errno_msg);
+                exit(2);
+            }
         }
     }
 
