@@ -9,13 +9,20 @@
 #include <sys/ioctl.h>
 #endif
 
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#else
+// Let's use FreeBSD's implementation of getopt-related
+// definition
+#include "getopt.h"
+#endif
+
 #include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <errno.h>
 
 #define NSTUDENT 100
@@ -560,7 +567,7 @@ main(int argc, char **argv)
     int termwidth = 74;
     int suppress_plot = 0;
 
-#ifdef HAVE_IOCTL_H
+#if defined(HAVE_UNISTD_H) && defined(HAVE_IOCTL_H)
     if (isatty(STDOUT_FILENO)) {
         struct winsize wsz;
 
