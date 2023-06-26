@@ -11,10 +11,18 @@ PROJECT(
 	VERSION 1.1.0
 )
 
+add_executable(ministat)
+
 check_include_file( sys/ioctl.h  HAVE_IOCTL_H  )
 check_include_file( unistd.h     HAVE_UNISTD_H )
 
-if(NOT (${HAVE_IOCTL_H} AND ${HAVE_UNISTD_H}))
+if(HAVE_IOCTL_H)
+	target_compile_definitions(ministat PRIVATE HAVE_IOCTL_H)
+else()
+	message(WARNING "ministat will be built without support for terminal-adaptive ouput")
+endif()
+
+if(NOT ${HAVE_UNISTD_H})
 	message(FATAL_ERROR "Missing critical header files" )
 endif()
 
@@ -24,8 +32,7 @@ if(NOT HAVE_STRDUP)
 	message( FATAL_ERROR "The strdup() function is unavailable" )
 endif()
 
-
-add_executable(ministat src/ministat.c)
+target_sources(ministat PRIVATE src/ministat.c)
 target_link_libraries(ministat PUBLIC m) # C math library
 
 set_property(TARGET ministat PROPERTY C_STANDARD           90)
