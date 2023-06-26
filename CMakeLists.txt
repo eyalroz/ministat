@@ -13,9 +13,8 @@ PROJECT(
 
 check_include_file( sys/ioctl.h  HAVE_IOCTL_H  )
 check_include_file( unistd.h     HAVE_UNISTD_H )
-check_include_file( err.h        HAVE_ERR_H )
 
-if(NOT (${HAVE_IOCTL_H} AND ${HAVE_UNISTD_H} AND ${HAVE_ERR_H}))
+if(NOT (${HAVE_IOCTL_H} AND ${HAVE_UNISTD_H}))
 	message(FATAL_ERROR "Missing critical header files" )
 endif()
 
