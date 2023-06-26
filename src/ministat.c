@@ -1,26 +1,25 @@
 /*
- * ----------------------------------------------------------------------------
- * "THE BEER-WARE LICENSE" (Revision 42):
- * <phk@FreeBSD.ORG> wrote this file.  As long as you retain this notice you
- * can do whatever you want with this stuff. If we meet some day, and you think
- * this stuff is worth it, you can buy me a beer in return.   Poul-Henning Kamp
- * ----------------------------------------------------------------------------
- *
+ * This source file, along with the rest of this repository, is distributed under
+ * the terms of the license in the COPYING file at the repository root; it is
+ * the 2-clause BSD license, along with the original author's "beer-ware"
+ * license.
  */
 
-#include <stdio.h>
-#include <math.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <sys/ioctl.h>
-#include <sys/queue.h>
+
+#include <assert.h>
+#include <ctype.h>
+#include <stdio.h>
 #include <err.h>
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #define NSTUDENT 100
 #define NCONF 6
-double const studentpct[] = { 80, 90, 95, 98, 99, 99.5 };
-double student [NSTUDENT + 1][NCONF] = {
+static double const studentpct[] = { 80, 90, 95, 98, 99, 99.5 };
+static double const student[NSTUDENT + 1][NCONF] = {
 /* inf */	{	1.282,	1.645,	1.960,	2.326,	2.576,	3.090  },
 /* 1. */	{	3.078,	6.314,	12.706,	31.821,	63.657,	318.313  },
 /* 2. */	{	1.886,	2.920,	4.303,	6.965,	9.925,	22.327  },
@@ -127,173 +126,161 @@ double student [NSTUDENT + 1][NCONF] = {
 #define	MAX_DS	8
 static char symbol[MAX_DS] = { ' ', 'x', '+', '*', '%', '#', '@', 'O' };
 
-TAILQ_HEAD(pointlist, point);
-
 struct dataset {
-	char *name;
-	struct pointlist list;
-	double sy, syy;
-	int n;
+    char *name;
+    double	*points;
+    size_t lpoints;
+    double sy, syy;
+    size_t n;
 };
 
 static struct dataset *
 NewSet(void)
 {
-	struct dataset *ds;
+    struct dataset *ds;
 
-	ds = calloc(1, sizeof *ds);
-	TAILQ_INIT(&ds->list);
-	return(ds);
+    ds = calloc(1, sizeof *ds);
+    assert(ds != NULL);
+    ds->lpoints = 100000;
+    ds->points = calloc(sizeof *ds->points, ds->lpoints);
+    assert(ds->points != NULL);
+    ds->syy = NAN;
+    return(ds);
 }
-
-struct point {
-	TAILQ_ENTRY(point)	list;
-	double			val;
-};
 
 static void
 AddPoint(struct dataset *ds, double a)
 {
-	struct point *pp, *pp2;
+    double *dp;
 
-	pp = calloc(1, sizeof *pp);
-	pp->val = a;
-
-	ds->n++;
-	ds->sy += a;
-	ds->syy += a * a;
-	if (TAILQ_EMPTY(&ds->list)) {
-		TAILQ_INSERT_HEAD(&ds->list, pp, list);
-		return;
-	}
-	TAILQ_FOREACH(pp2, &ds->list, list) {
-		if (pp->val < pp2->val) {
-			TAILQ_INSERT_BEFORE(pp2, pp, list);
-			return;
-		}
-	}
-	TAILQ_INSERT_TAIL(&ds->list, pp, list);
+    if (ds->n >= ds->lpoints) {
+        dp = ds->points;
+        ds->lpoints *= 4;
+        ds->points = calloc(sizeof *ds->points, ds->lpoints);
+        assert(ds->points != NULL);
+        memcpy(ds->points, dp, sizeof *dp * ds->n);
+        free(dp);
+    }
+    ds->points[ds->n++] = a;
+    ds->sy += a;
 }
 
 static double
-Min(struct dataset *ds)
+Min(const struct dataset *ds)
 {
 
-	return (TAILQ_FIRST(&ds->list)->val);
+    return (ds->points[0]);
 }
 
 static double
-Max(struct dataset *ds)
+Max(const struct dataset *ds)
 {
 
-	return(TAILQ_LAST(&ds->list, pointlist)->val);
+    return (ds->points[ds->n -1]);
 }
 
 static double
-Avg(struct dataset *ds)
+Avg(const struct dataset *ds)
 {
 
-	return(ds->sy / ds->n);
+    return(ds->sy / ds->n);
 }
 
 static double
-Median(struct dataset *ds)
+Median(const struct dataset *ds)
 {
-	int even, i;
-	struct point *p1, *p2;
+    const size_t m = ds->n / 2;
 
-	if ((ds->n % 2) == 1) {
-		i = (ds->n / 2) + 1;
-		even = 0;
-	} else {
-		i = ds->n / 2;
-		even = 1;
-	}
-	TAILQ_FOREACH(p1, &ds->list, list) {
-		--i;
-		if (i == 0)
-			break;
-	}
-	if (even) {
-		p2 = TAILQ_NEXT(p1, list);
-		return ((p2->val + p1->val) / 2);
-	}
-	return (p1->val);
+    if ((ds->n % 2) == 0)
+        return ((ds->points[m] + (ds->points[m - 1])) / 2);
+    return (ds->points[m]);
 }
 
 static double
 Var(struct dataset *ds)
 {
+    size_t z;
+    const double a = Avg(ds);
 
-	return (ds->syy - ds->sy * ds->sy / ds->n) / (ds->n - 1.0);
+    if (isnan(ds->syy)) {
+        ds->syy = 0.0;
+        for (z = 0; z < ds->n; z++)
+            ds->syy += (ds->points[z] - a) * (ds->points[z] - a);
+    }
+
+    return (ds->syy / (ds->n - 1.0));
 }
 
 static double
 Stddev(struct dataset *ds)
 {
 
-	return sqrt(Var(ds));
+    return sqrt(Var(ds));
 }
 
 static void
 VitalsHead(void)
 {
 
-	printf("    N           Min           Max        Median           Avg        Stddev\n");
+    printf("    N           Min           Max        Median           Avg        Stddev\n");
 }
 
 static void
 Vitals(struct dataset *ds, int flag)
 {
-	double a;
 
-	printf("%c %3d %13.8g %13.8g %13.8g %13.8g %13.8g", symbol[flag],
-	    ds->n, Min(ds), Max(ds), Median(ds), Avg(ds), Stddev(ds));
-	printf("\n");
+    printf("%c %3zu %13.8g %13.8g %13.8g %13.8g %13.8g", symbol[flag],
+           ds->n, Min(ds), Max(ds), Median(ds), Avg(ds), Stddev(ds));
+    printf("\n");
 }
 
 static void
 Relative(struct dataset *ds, struct dataset *rs, int confidx)
 {
-	double spool, s, d, e, t;
-	int i, c;
+    double spool, s, d, e, t;
+    double re;
+    size_t z;
 
-	i = ds->n + rs->n - 2;
-	if (i > NSTUDENT)
-		t = student[0][confidx];
-	else
-		t = student[i][confidx];
-	spool = (ds->n - 1) * Var(ds) + (rs->n - 1) * Var(rs);
-	spool /= ds->n + rs->n - 2;
-	spool = sqrt(spool);
-	s = spool * sqrt(1.0 / ds->n + 1.0 / rs->n);
-	d = Avg(ds) - Avg(rs);
-	e = t * s;
+    z = ds->n + rs->n - 2;
+    if (z > NSTUDENT)
+        t = student[0][confidx];
+    else
+        t = student[z][confidx];
+    spool = (ds->n - 1) * Var(ds) + (rs->n - 1) * Var(rs);
+    spool /= ds->n + rs->n - 2;
+    spool = sqrt(spool);
+    s = spool * sqrt(1.0 / ds->n + 1.0 / rs->n);
+    d = Avg(ds) - Avg(rs);
+    e = t * s;
 
-	if (fabs(d) > e) {
-	
-		printf("Difference at %.1f%% confidence\n", studentpct[confidx]);
-		printf("	%g +/- %g\n", d, e);
-		printf("	%g%% +/- %g%%\n", d * 100 / Avg(rs), e * 100 / Avg(rs));
-		printf("	(Student's t, pooled s = %g)\n", spool);
-	} else {
-		printf("No difference proven at %.1f%% confidence\n",
-		    studentpct[confidx]);
-	}
+    re = (ds->n - 1) * Var(ds) + (rs->n - 1) * Var(rs) *
+                                 (Avg(ds) * Avg(ds)) / (Avg(rs) * Avg(rs));
+    re *= (ds->n + rs->n) / (ds->n * rs->n * (ds->n + rs->n - 2.0));
+    re = t * sqrt(re);
+
+    if (fabs(d) > e) {
+        printf("Difference at %.1f%% confidence\n", studentpct[confidx]);
+        printf("	%g +/- %g\n", d, e);
+        printf("	%g%% +/- %g%%\n", d * 100 / Avg(rs), re * 100 / Avg(rs));
+        printf("	(Student's t, pooled s = %g)\n", spool);
+    } else {
+        printf("No difference proven at %.1f%% confidence\n",
+               studentpct[confidx]);
+    }
 }
 
 struct plot {
-	double		min;
-	double		max;
-	double		span;
-	int		width;
+    double		min;
+    double		max;
+    double		span;
+    int		width;
 
-	double		x0, dx;
-	int		height;
-	char		*data;
-	char		**bar;
-	int		separate_bars;
-	int		num_datasets;
+    double		x0, dx;
+    size_t		height;
+    char		*data;
+    char		**bar;
+    int		separate_bars;
+    int		num_datasets;
 };
 
 static struct plot plot;
@@ -301,342 +288,382 @@ static struct plot plot;
 static void
 SetupPlot(int width, int separate, int num_datasets)
 {
-	struct plot *pl;
+    struct plot *pl;
 
-	pl = &plot;
-	pl->width = width;
-	pl->height = 0;
-	pl->data = NULL;
-	pl->bar = NULL;
-	pl->separate_bars = separate;
-	pl->num_datasets = num_datasets;
-	pl->min = 999e99;
-	pl->max = -999e99;
+    pl = &plot;
+    pl->width = width;
+    pl->height = 0;
+    pl->data = NULL;
+    pl->bar = NULL;
+    pl->separate_bars = separate;
+    pl->num_datasets = num_datasets;
+    pl->min = 999e99;
+    pl->max = -999e99;
 }
 
 static void
 AdjPlot(double a)
 {
-	struct plot *pl;
+    struct plot *pl;
 
-	pl = &plot;
-	if (a < pl->min)
-		pl->min = a;
-	if (a > pl->max)
-		pl->max = a;
-	pl->span = pl->max - pl->min;
-	pl->dx = pl->span / (pl->width - 1.0);
-	pl->x0 = pl->min - .5 * pl->dx;
+    pl = &plot;
+    if (a < pl->min)
+        pl->min = a;
+    if (a > pl->max)
+        pl->max = a;
+    pl->span = pl->max - pl->min;
+    pl->dx = pl->span / (pl->width - 1.0);
+    pl->x0 = pl->min - .5 * pl->dx;
 }
 
 static void
 DimPlot(struct dataset *ds)
 {
-	AdjPlot(Min(ds));
-	AdjPlot(Max(ds));
-	AdjPlot(Avg(ds) - Stddev(ds));
-	AdjPlot(Avg(ds) + Stddev(ds));
+    AdjPlot(Min(ds));
+    AdjPlot(Max(ds));
+    AdjPlot(Avg(ds) - Stddev(ds));
+    AdjPlot(Avg(ds) + Stddev(ds));
 }
 
 static void
 PlotSet(struct dataset *ds, int val)
 {
-	struct plot *pl;
-	struct point *pp;
-	int i, j, m, x;
-	int bar;
+    struct plot *pl;
+    int i, x;
+    size_t m, j, z;
+    size_t n;
+    int bar;
+    double av, sd;
 
-	pl = &plot;
-	if (pl->span == 0)
-		return;
+    pl = &plot;
+    if (pl->span == 0)
+        return;
 
-	if (pl->separate_bars)
-		bar = val-1;
-	else
-		bar = 0;
+    if (pl->separate_bars)
+        bar = val-1;
+    else
+        bar = 0;
 
-	if (pl->bar == NULL) {
-		pl->bar = malloc(sizeof(char *) * pl->num_datasets);
-		memset(pl->bar, 0, sizeof(char*) * pl->num_datasets);
-	}
-	if (pl->bar[bar] == NULL) {
-		pl->bar[bar] = malloc(pl->width);
-		memset(pl->bar[bar], 0, pl->width);
-	}
-	
-	m = 1;
-	i = -1;
-	j = 0;
-	TAILQ_FOREACH(pp, &ds->list, list) {
-		x = (pp->val - pl->x0) / pl->dx;
-		if (x == i) {
-			j++;
-			if (j > m)
-				m = j;
-		} else {
-			j = 1;
-			i = x;
-		}
-	}
-	m += 1;
-	if (m > pl->height) {
-		pl->data = realloc(pl->data, pl->width * m);
-		memset(pl->data + pl->height * pl->width, 0,
-		    (m - pl->height) * pl->width);
-	}
-	pl->height = m;
-	i = -1;
-	TAILQ_FOREACH(pp, &ds->list, list) {
-		x = (pp->val - pl->x0) / pl->dx;
-		if (x == i) {
-			j++;
-		} else {
-			j = 1;
-			i = x;
-		}
-		pl->data[j * pl->width + x] |= val;
-	}
-	if (!isnan(Stddev(ds))) {
-		x = ((Avg(ds) - Stddev(ds)) - pl->x0) / pl->dx;
-		m = ((Avg(ds) + Stddev(ds)) - pl->x0) / pl->dx;
-		pl->bar[bar][m] = '|';
-		pl->bar[bar][x] = '|';
-		for (i = x + 1; i < m; i++)
-			if (pl->bar[bar][i] == 0)
-				pl->bar[bar][i] = '_';
-	}
-	x = (Median(ds) - pl->x0) / pl->dx;
-	pl->bar[bar][x] = 'M';
-	x = (Avg(ds) - pl->x0) / pl->dx;
-	pl->bar[bar][x] = 'A';
+    if (pl->bar == NULL) {
+        pl->bar = calloc(sizeof(char *), pl->num_datasets);
+        assert(pl->bar != NULL);
+    }
+
+    if (pl->bar[bar] == NULL) {
+        pl->bar[bar] = malloc(pl->width);
+        assert(pl->bar[bar] != NULL);
+        memset(pl->bar[bar], 0, pl->width);
+    }
+
+    m = 1;
+    i = -1;
+    j = 0;
+    /* Set m to max(j) + 1, to allocate required memory */
+    for (n = 0; n < ds->n; n++) {
+        x = (ds->points[n] - pl->x0) / pl->dx;
+        if (x == i) {
+            j++;
+            if (j > m)
+                m = j;
+        } else {
+            j = 1;
+            i = x;
+        }
+    }
+    m += 1;
+    if (m > pl->height) {
+        pl->data = realloc(pl->data, pl->width * m);
+        assert(pl->data != NULL);
+        memset(pl->data + pl->height * pl->width, 0,
+               (m - pl->height) * pl->width);
+    }
+    pl->height = m;
+    i = -1;
+    for (n = 0; n < ds->n; n++) {
+        x = (ds->points[n] - pl->x0) / pl->dx;
+        if (x == i) {
+            j++;
+        } else {
+            j = 1;
+            i = x;
+        }
+        pl->data[j * pl->width + x] |= val;
+    }
+    av = Avg(ds);
+    sd = Stddev(ds);
+    if (!isnan(sd)) {
+        x = ((av - sd) - pl->x0) / pl->dx;
+        m = ((av + sd) - pl->x0) / pl->dx;
+        pl->bar[bar][m] = '|';
+        pl->bar[bar][x] = '|';
+        for (z = x + 1; z < m; z++)
+            if (pl->bar[bar][z] == 0)
+                pl->bar[bar][z] = '_';
+    }
+    x = (Median(ds) - pl->x0) / pl->dx;
+    pl->bar[bar][x] = 'M';
+    x = (av - pl->x0) / pl->dx;
+    pl->bar[bar][x] = 'A';
 }
 
 static void
 DumpPlot(void)
 {
-	struct plot *pl;
-	int i, j, k;
+    struct plot *pl;
+    int i, j, k;
+    size_t z;
 
-	pl = &plot;
-	if (pl->span == 0) {
-		printf("[no plot, span is zero width]\n");
-		return;
-	}
+    pl = &plot;
+    if (pl->span == 0) {
+        printf("[no plot, span is zero width]\n");
+        return;
+    }
 
-	putchar('+');
-	for (i = 0; i < pl->width; i++)
-		putchar('-');
-	putchar('+');
-	putchar('\n');
-	for (i = 1; i < pl->height; i++) {
-		putchar('|');
-		for (j = 0; j < pl->width; j++) {
-			k = pl->data[(pl->height - i) * pl->width + j];
-			if (k >= 0 && k < MAX_DS)
-				putchar(symbol[k]);
-			else
-				printf("[%02x]", k);
-		}
-		putchar('|');
-		putchar('\n');
-	}
-	for (i = 0; i < pl->num_datasets; i++) {
-		if (pl->bar[i] == NULL)
-			continue;
-		putchar('|');
-		for (j = 0; j < pl->width; j++) {
-			k = pl->bar[i][j];
-			if (k == 0)
-				k = ' ';
-			putchar(k);
-		}
-		putchar('|');
-		putchar('\n');
-	}
-	putchar('+');
-	for (i = 0; i < pl->width; i++)
-		putchar('-');
-	putchar('+');
-	putchar('\n');
+    putchar('+');
+    for (i = 0; i < pl->width; i++)
+        putchar('-');
+    putchar('+');
+    putchar('\n');
+    for (z = 1; z < pl->height; z++) {
+        putchar('|');
+        for (j = 0; j < pl->width; j++) {
+            k = pl->data[(pl->height - z) * pl->width + j];
+            if (k >= 0 && k < MAX_DS)
+                putchar(symbol[k]);
+            else
+                printf("[%02x]", k);
+        }
+        putchar('|');
+        putchar('\n');
+    }
+    for (i = 0; i < pl->num_datasets; i++) {
+        if (pl->bar[i] == NULL)
+            continue;
+        putchar('|');
+        for (j = 0; j < pl->width; j++) {
+            k = pl->bar[i][j];
+            if (k == 0)
+                k = ' ';
+            putchar(k);
+        }
+        putchar('|');
+        putchar('\n');
+    }
+    putchar('+');
+    for (i = 0; i < pl->width; i++)
+        putchar('-');
+    putchar('+');
+    putchar('\n');
 }
 
+static int
+dbl_cmp(const void *a, const void *b)
+{
+    const double *aa = a;
+    const double *bb = b;
+
+    if (*aa < *bb)
+        return (-1);
+    else if (*aa > *bb)
+        return (1);
+    else
+        return (0);
+}
 
 static struct dataset *
-ReadSet(char *n, int column, char *delim)
+ReadSet(FILE *f, const char *n, int column, const char *delim)
 {
-	FILE *f;
-	char buf[BUFSIZ], *p, *t;
-	struct dataset *s;
-	double d;
-	int line;
-	int i;
+    char buf[BUFSIZ], *p, *t;
+    struct dataset *s;
+    double d;
+    int line;
+    int i;
 
-	if (n == NULL) {
-		f = stdin;
-		n = "<stdin>";
-	} else if (!strcmp(n, "-")) {
-		f = stdin;
-		n = "<stdin>";
-	} else {
-		f = fopen(n, "r");
-	}
-	if (f == NULL)
-		err(1, "Cannot open %s", n);
-	s = NewSet();
-	s->name = strdup(n);
-	line = 0;
-	while (fgets(buf, sizeof buf, f) != NULL) {
-		line++;
+    s = NewSet();
+    s->name = strdup(n);
+    assert(s->name != NULL);
+    line = 0;
+    while (fgets(buf, sizeof buf, f) != NULL) {
+        line++;
 
-		i = strlen(buf);
-		if (buf[i-1] == '\n')
-			buf[i-1] = '\0';
-		for (i = 1, t = strtok(buf, delim);
-		     t != NULL && *t != '#';
-		     i++, t = strtok(NULL, delim)) {
-			if (i == column)
-				break;
-		}
-		if (t == NULL || *t == '#')
-			continue;
+        i = strlen(buf);
+        while (i > 0 && isspace(buf[i - 1]))
+            buf[--i] = '\0';
+        for (i = 1, t = strtok(buf, delim);
+             t != NULL && *t != '#';
+             i++, t = strtok(NULL, delim)) {
+            if (i == column)
+                break;
+        }
+        if (t == NULL || *t == '#')
+            continue;
 
-		d = strtod(t, &p);
-		if (p != NULL && *p != '\0')
-			err(2, "Invalid data on line %d in %s\n", line, n);
-		if (*buf != '\0')
-			AddPoint(s, d);
-	}
-	fclose(f);
-	if (s->n < 3) {
-		fprintf(stderr,
-		    "Dataset %s must contain at least 3 data points\n", n);
-		exit (2);
-	}
-	return (s);
+        d = strtod(t, &p);
+        if (p != NULL && *p != '\0')
+            errx(2, "Invalid data on line %d in %s", line, n);
+        if (*buf != '\0')
+            AddPoint(s, d);
+    }
+    if (s->n < 3) {
+        fprintf(stderr,
+                "Dataset %s must contain at least 3 data points\n", n);
+        exit (2);
+    }
+    qsort(s->points, s->n, sizeof *s->points, dbl_cmp);
+    return (s);
 }
 
 static void
 usage(char const *whine)
 {
-	int i;
+    int i;
 
-	fprintf(stderr, "%s\n", whine);
-	fprintf(stderr,
-	    "Usage: ministat [-C column] [-c confidence] [-d delimiter(s)] [-ns] [-w width] [file [file ...]]\n");
-	fprintf(stderr, "\tconfidence = {");
-	for (i = 0; i < NCONF; i++) {
-		fprintf(stderr, "%s%g%%",
-		    i ? ", " : "",
-		    studentpct[i]);
-	}
-	fprintf(stderr, "}\n");
-	fprintf(stderr, "\t-C : column number to extract (starts and defaults to 1)\n");
-	fprintf(stderr, "\t-d : delimiter(s) string, default to \" \\t\"\n");
-	fprintf(stderr, "\t-n : print summary statistics only, no graph/test\n");
-	fprintf(stderr, "\t-s : print avg/median/stddev bars on separate lines\n");
-	fprintf(stderr, "\t-w : width of graph/test output (default 74 or terminal width)\n");
-	exit (2);
+    fprintf(stderr, "%s\n", whine);
+    fprintf(stderr,
+            "Usage: ministat [-C column] [-c confidence] [-d delimiter(s)] [-Anqs] [-w width] [file [file ...]]\n");
+    fprintf(stderr, "\tconfidence = {");
+    for (i = 0; i < NCONF; i++) {
+        fprintf(stderr, "%s%g%%",
+                i ? ", " : "",
+                studentpct[i]);
+    }
+    fprintf(stderr, "}\n");
+    fprintf(stderr, "\t-A : print statistics only. suppress the graph.\n");
+    fprintf(stderr, "\t-C : column number to extract (starts and defaults to 1)\n");
+    fprintf(stderr, "\t-d : delimiter(s) string, default to \" \\t\"\n");
+    fprintf(stderr, "\t-n : print summary statistics only, no graph/test\n");
+    fprintf(stderr, "\t-q : suppress printing summary-statistics headers and data-set names\n");
+    fprintf(stderr, "\t-s : print avg/median/stddev bars on separate lines\n");
+    fprintf(stderr, "\t-w : width of graph/test output (default 74 or terminal width)\n");
+    exit (2);
 }
 
 int
 main(int argc, char **argv)
 {
-	struct dataset *ds[7];
-	int nds;
-	double a;
-	char *delim = " \t";
-	char *p;
-	int c, i, ci;
-	int column = 1;
-	int flag_s = 0;
-	int flag_n = 0;
-	int termwidth = 74;
+    const char *setfilenames[MAX_DS - 1];
+    struct dataset *ds[MAX_DS - 1];
+    FILE *setfiles[MAX_DS - 1];
+    int nds;
+    double a;
+    const char *delim = " \t";
+    char *p;
+    int c, i, ci;
+    int column = 1;
+    int flag_s = 0;
+    int flag_n = 0;
+    int flag_q = 0;
+    int termwidth = 74;
+    int suppress_plot = 0;
 
-	if (isatty(STDOUT_FILENO)) {
-		struct winsize wsz;
+    if (isatty(STDOUT_FILENO)) {
+        struct winsize wsz;
 
-		if ((p = getenv("COLUMNS")) != NULL && *p != '\0')
-			termwidth = atoi(p);
-		else if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &wsz) != -1 &&
-			 wsz.ws_col > 0)
-			termwidth = wsz.ws_col - 2;
-	}
+        if ((p = getenv("COLUMNS")) != NULL && *p != '\0')
+            termwidth = atoi(p);
+        else if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &wsz) != -1 &&
+                 wsz.ws_col > 0)
+            termwidth = wsz.ws_col - 2;
+    }
 
-	ci = -1;
-	while ((c = getopt(argc, argv, "C:c:d:snw:")) != -1)
-		switch (c) {
-		case 'C':
-			column = strtol(optarg, &p, 10);
-			if (p != NULL && *p != '\0')
-				usage("Invalid column number.");
-			if (column <= 0)
-				usage("Column number should be positive.");
-			break;
-		case 'c':
-			a = strtod(optarg, &p);
-			if (p != NULL && *p != '\0')
-				usage("Not a floating point number");
-			for (i = 0; i < NCONF; i++)
-				if (a == studentpct[i])
-					ci = i;
-			if (ci == -1)
-				usage("No support for confidence level");
-			break;
-		case 'd':
-			if (*optarg == '\0')
-				usage("Can't use empty delimiter string");
-			delim = optarg;
-			break;
-		case 'n':
-			flag_n = 1;
-			break;
-		case 's':
-			flag_s = 1;
-			break;
-		case 'w':
-			termwidth = strtol(optarg, &p, 10);
-			if (p != NULL && *p != '\0')
-				usage("Invalid width, not a number.");
-			if (termwidth < 0)
-				usage("Unable to move beyond left margin.");
-			break;
-		default:
-			usage("Unknown option");
-			break;
-		}
-	if (ci == -1)
-		ci = 2;
-	argc -= optind;
-	argv += optind;
+    ci = -1;
+    while ((c = getopt(argc, argv, "AC:c:d:snqw:")) != -1)
+        switch (c) {
+            case 'A':
+                suppress_plot = 1;
+                break;
+            case 'C':
+                column = strtol(optarg, &p, 10);
+                if (p != NULL && *p != '\0')
+                    usage("Invalid column number.");
+                if (column <= 0)
+                    usage("Column number should be positive.");
+                break;
+            case 'c':
+                a = strtod(optarg, &p);
+                if (p != NULL && *p != '\0')
+                    usage("Not a floating point number");
+                for (i = 0; i < NCONF; i++)
+                    if (a == studentpct[i])
+                        ci = i;
+                if (ci == -1)
+                    usage("No support for confidence level");
+                break;
+            case 'd':
+                if (*optarg == '\0')
+                    usage("Can't use empty delimiter string");
+                delim = optarg;
+                break;
+            case 'n':
+                flag_n = 1;
+                break;
+            case 'q':
+                flag_q = 1;
+                break;
+            case 's':
+                flag_s = 1;
+                break;
+            case 'w':
+                termwidth = strtol(optarg, &p, 10);
+                if (p != NULL && *p != '\0')
+                    usage("Invalid width, not a number.");
+                if (termwidth < 0)
+                    usage("Unable to move beyond left margin.");
+                break;
+            default:
+                usage("Unknown option");
+                break;
+        }
+    if (ci == -1)
+        ci = 2;
+    argc -= optind;
+    argv += optind;
 
-	if (argc == 0) {
-		ds[0] = ReadSet("-", column, delim);
-		nds = 1;
-	} else {
-		if (argc > (MAX_DS - 1))
-			usage("Too many datasets.");
-		nds = argc;
-		for (i = 0; i < nds; i++)
-			ds[i] = ReadSet(argv[i], column, delim);
-	}
+    if (argc == 0) {
+        setfilenames[0] = "<stdin>";
+        setfiles[0] = stdin;
+        nds = 1;
+    } else {
+        if (argc > (MAX_DS - 1))
+            usage("Too many datasets.");
+        nds = argc;
+        for (i = 0; i < nds; i++) {
+            setfilenames[i] = argv[i];
+            if (!strcmp(argv[i], "-"))
+                setfiles[0] = stdin;
+            else
+                setfiles[i] = fopen(argv[i], "r");
+            if (setfiles[i] == NULL)
+                err(2, "Cannot open %s", argv[i]);
+        }
+    }
 
-	for (i = 0; i < nds; i++) 
-		printf("%c %s\n", symbol[i+1], ds[i]->name);
+    for (i = 0; i < nds; i++) {
+        ds[i] = ReadSet(setfiles[i], setfilenames[i], column, delim);
+        if (setfiles[i] != stdin)
+            fclose(setfiles[i]);
+    }
 
-	if (!flag_n) {
-		SetupPlot(termwidth, flag_s, nds);
-		for (i = 0; i < nds; i++)
-			DimPlot(ds[i]);
-		for (i = 0; i < nds; i++)
-			PlotSet(ds[i], i + 1);
-		DumpPlot();
-	}
-	VitalsHead();
-	Vitals(ds[0], 1);
-	for (i = 1; i < nds; i++) {
-		Vitals(ds[i], i + 1);
-		if (!flag_n)
-			Relative(ds[i], ds[0], ci);
-	}
-	exit(0);
+    if (!flag_q) {
+        for (i = 0; i < nds; i++)
+            printf("%c %s\n", symbol[i+1], ds[i]->name);
+    }
+
+    if (!flag_n && !suppress_plot) {
+        SetupPlot(termwidth, flag_s, nds);
+        for (i = 0; i < nds; i++)
+            DimPlot(ds[i]);
+        for (i = 0; i < nds; i++)
+            PlotSet(ds[i], i + 1);
+        DumpPlot();
+    }
+    if (!flag_q)
+        VitalsHead();
+    Vitals(ds[0], 1);
+    for (i = 1; i < nds; i++) {
+        Vitals(ds[i], i + 1);
+        if (!flag_n)
+            Relative(ds[i], ds[0], ci);
+    }
+    exit(0);
 }
