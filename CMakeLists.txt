@@ -20,20 +20,18 @@ endif()
 check_include_file(unistd.h HAVE_UNISTD_H)
 if(HAVE_UNISTD_H)
 	target_compile_definitions(ministat PRIVATE HAVE_UNISTD_H)
-else()
-	target_sources(ministat PRIVATE src/getopt.c)
 endif()
 
 if(NOT (HAVE_IOCTL_H AND HAVE_UNISTD_H))
 	message(WARNING "ministat will be built without support for terminal-adaptive ouput")
 endif()
 
-target_sources(ministat PRIVATE src/ministat.c)
+target_sources(ministat PRIVATE src/ministat.c src/getopt.c)
 target_link_libraries(ministat PUBLIC m) # C math library
 
-set_property(TARGET ministat PROPERTY C_STANDARD           90)
-set_property(TARGET ministat PROPERTY C_STANDARD_REQUIRED  OFF)
-set_property(TARGET ministat PROPERTY C_EXTENSIONS         ON)
+set_property(TARGET ministat PROPERTY C_STANDARD           99)
+set_property(TARGET ministat PROPERTY C_STANDARD_REQUIRED  ON)
+set_property(TARGET ministat PROPERTY C_EXTENSIONS         OFF)
 
 file(ARCHIVE_CREATE
 	OUTPUT ministat.1.gz

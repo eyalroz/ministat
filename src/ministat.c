@@ -5,16 +5,15 @@
  * license.
  */
 
+/* We use our bundled implementation of getopt() */
+#include "getopt.h"
+
 #ifdef HAVE_IOCTL_H
 #include <sys/ioctl.h>
 #endif
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
-#else
-// Let's use FreeBSD's implementation of getopt-related
-// definition
-#include "getopt.h"
 #endif
 
 #include <assert.h>
