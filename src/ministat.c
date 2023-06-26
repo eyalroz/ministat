@@ -5,7 +5,9 @@
  * license.
  */
 
+#ifdef HAVE_IOCTL_H
 #include <sys/ioctl.h>
+#endif
 
 #include <assert.h>
 #include <ctype.h>
@@ -558,15 +560,18 @@ main(int argc, char **argv)
     int termwidth = 74;
     int suppress_plot = 0;
 
+#ifdef HAVE_IOCTL_H
     if (isatty(STDOUT_FILENO)) {
         struct winsize wsz;
 
         if ((p = getenv("COLUMNS")) != NULL && *p != '\0')
             termwidth = atoi(p);
+
         else if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &wsz) != -1 &&
                  wsz.ws_col > 0)
             termwidth = wsz.ws_col - 2;
     }
+#endif
 
     ci = -1;
     while ((c = getopt(argc, argv, "AC:c:d:snqw:")) != -1)
