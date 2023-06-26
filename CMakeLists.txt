@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.12...3.31)
 
 include(CheckIncludeFile)
-include(CheckFunctionExists)
 
 PROJECT(
 	ministat
@@ -27,12 +26,6 @@ endif()
 
 if(NOT (HAVE_IOCTL_H AND HAVE_UNISTD_H))
 	message(WARNING "ministat will be built without support for terminal-adaptive ouput")
-endif()
-
-check_function_exists(strdup HAVE_STRDUP)
-
-if(NOT HAVE_STRDUP)
-	message( FATAL_ERROR "The strdup() function is unavailable" )
 endif()
 
 target_sources(ministat PRIVATE src/ministat.c)

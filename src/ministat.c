@@ -479,6 +479,14 @@ dbl_cmp(const void *a, const void *b)
         return (0);
 }
 
+static char* strdup_(const char *s)
+{
+    char* copy_of_s = malloc(strlen(s)+1);
+    assert(copy_of_s != NULL);
+    strcpy(copy_of_s, s);
+    return copy_of_s;
+}
+
 static struct dataset *
 ReadSet(FILE *f, const char *n, int column, const char *delim)
 {
@@ -489,7 +497,8 @@ ReadSet(FILE *f, const char *n, int column, const char *delim)
     int i;
 
     s = NewSet();
-    s->name = strdup(n);
+
+    s->name = strdup_(n);
     assert(s->name != NULL);
     line = 0;
     while (fgets(buf, sizeof buf, f) != NULL) {
