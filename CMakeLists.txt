@@ -13,17 +13,20 @@ PROJECT(
 
 add_executable(ministat)
 
-check_include_file( sys/ioctl.h  HAVE_IOCTL_H  )
-check_include_file( unistd.h     HAVE_UNISTD_H )
-
+check_include_file(sys/ioctl.h HAVE_IOCTL_H)
 if(HAVE_IOCTL_H)
 	target_compile_definitions(ministat PRIVATE HAVE_IOCTL_H)
-else()
-	message(WARNING "ministat will be built without support for terminal-adaptive ouput")
 endif()
 
-if(NOT ${HAVE_UNISTD_H})
-	message(FATAL_ERROR "Missing critical header files" )
+check_include_file(unistd.h HAVE_UNISTD_H)
+if(HAVE_UNISTD_H)
+	target_compile_definitions(ministat PRIVATE HAVE_UNISTD_H)
+else()
+	target_sources(ministat PRIVATE src/getopt.c)
+endif()
+
+if(NOT (HAVE_IOCTL_H AND HAVE_UNISTD_H))
+	message(WARNING "ministat will be built without support for terminal-adaptive ouput")
 endif()
 
 check_function_exists(strdup HAVE_STRDUP)
