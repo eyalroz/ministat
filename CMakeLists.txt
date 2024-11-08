@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.12...3.31)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
 include(CheckIncludeFile)
+include(CompileWithWarnings)
 
 PROJECT(
 	ministat
@@ -27,6 +29,12 @@ if(NOT (HAVE_IOCTL_H AND HAVE_UNISTD_H))
 endif()
 
 target_sources(ministat PRIVATE src/ministat.c src/getopt.c)
+target_warning_options(ministat)
+target_compile_options(ministat PRIVATE
+	$<$<OR:$<C_COMPILER_ID:Clang>,$<C_COMPILER_ID:AppleClang>,$<C_COMPILER_ID:GNU>>:
+		-Wall -Wextra -pedantic -Wshadow -Wdouble-promotion -Wformat=2 -Wconversion>)
+
+target_compile_options(ministat PRIVATE "-Wno-sign-conversion" "-Wno-conversion" "-Wno-float-conversion")
 target_link_libraries(ministat PUBLIC m) # C math library
 
 set_property(TARGET ministat PROPERTY C_STANDARD           99)
