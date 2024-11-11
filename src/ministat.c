@@ -234,10 +234,11 @@ VitalsHead(void)
 }
 
 static void
-Vitals(struct dataset *ds, int flag)
+Vitals(struct dataset *ds, int ds_index, int flag_q)
 {
 
-    printf("%c %3zu %13.8g %13.8g %13.8g %13.8g %13.8g", symbol[flag],
+    printf("%c %3zu %13.8g %13.8g %13.8g %13.8g %13.8g",
+           flag_q ? ' ' : symbol[ds_index],
            ds->n, Min(ds), Max(ds), Median(ds), Avg(ds), Stddev(ds));
     printf("\n");
 }
@@ -539,7 +540,7 @@ usage(char const *whine)
 
     fprintf(stderr, "%s\n", whine);
     fprintf(stderr,
-            "Usage: ministat [-C column] [-c confidence] [-d delimiter(s)] [-Anqs] [-w width] [file [file ...]]\n");
+            "Usage: ministat [-C column] [-c confidence] [-d delimiter(s)] [-AnqsH] [-w width] [file [file ...]]\n");
     fprintf(stderr, "\tconfidence = {");
     for (i = 0; i < NCONF; i++) {
         fprintf(stderr, "%s%g%%",
@@ -551,7 +552,8 @@ usage(char const *whine)
     fprintf(stderr, "\t-C : column number to extract (starts and defaults to 1)\n");
     fprintf(stderr, "\t-d : delimiter(s) string, default to \" \\t\"\n");
     fprintf(stderr, "\t-n : print summary statistics only, no graph/test\n");
-    fprintf(stderr, "\t-q : suppress printing summary-statistics headers and data-set names\n");
+    fprintf(stderr, "\t-q : suppress printing data-set names and symbols\n");
+    fprintf(stderr, "\t-H : suppress printing summary statistics header line\n");
     fprintf(stderr, "\t-s : print avg/median/stddev bars on separate lines\n");
     fprintf(stderr, "\t-w : width of graph/test output (default 74 or terminal width)\n");
     exit (2);
@@ -572,6 +574,7 @@ main(int argc, char **argv)
     int flag_s = 0;
     int flag_n = 0;
     int flag_q = 0;
+    int flag_H = 0;
     int termwidth = 74;
     int suppress_plot = 0;
 
@@ -589,7 +592,7 @@ main(int argc, char **argv)
 #endif
 
     ci = -1;
-    while ((c = getopt(argc, argv, "AC:c:d:snqw:")) != -1)
+    while ((c = getopt(argc, argv, "AC:c:d:snqHw:")) != -1)
         switch (c) {
             case 'A':
                 suppress_plot = 1;
@@ -621,6 +624,9 @@ main(int argc, char **argv)
                 break;
             case 'q':
                 flag_q = 1;
+                break;
+            case 'H':
+                flag_H = 1;
                 break;
             case 's':
                 flag_s = 1;
@@ -682,11 +688,11 @@ main(int argc, char **argv)
             PlotSet(ds[i], i + 1);
         DumpPlot();
     }
-    if (!flag_q)
+    if (!flag_H)
         VitalsHead();
-    Vitals(ds[0], 1);
+    Vitals(ds[0], 1, flag_q);
     for (i = 1; i < nds; i++) {
-        Vitals(ds[i], i + 1);
+        Vitals(ds[i], i + 1, flag_q);
         if (!flag_n)
             Relative(ds[i], ds[0], ci);
     }
