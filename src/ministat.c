@@ -226,20 +226,27 @@ Stddev(struct dataset *ds)
     return sqrt(Var(ds));
 }
 
+static double
+Stderr(struct dataset *ds)
+{
+
+    return Stddev(ds) / Avg(ds);
+}
+
 static void
 VitalsHead(void)
 {
 
-    printf("    N           Min           Max        Median           Avg        Stddev\n");
-}
+    printf("    N           Min           Max        Median           Avg           Var        Stddev       Coefvar\n");
+
 
 static void
 Vitals(struct dataset *ds, int ds_index, int flag_q)
-{
 
-    printf("%c %3zu %13.8g %13.8g %13.8g %13.8g %13.8g",
+
+    printf("%c %3zu %13.8g %13.8g %13.8g %13.8g %13.8g %13.8g %13.8g",
            flag_q ? ' ' : symbol[ds_index],
-           ds->n, Min(ds), Max(ds), Median(ds), Avg(ds), Stddev(ds));
+           ds->n, Min(ds), Max(ds), Median(ds), Avg(ds), Var(ds), Stddev(ds), Stderr(ds));
     printf("\n");
 }
 
